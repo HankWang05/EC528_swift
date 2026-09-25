@@ -2093,6 +2093,49 @@ class TestRingBuilder(unittest.TestCase):
                                                  mock_fh.__enter__(),
                                                  protocol=2)
 
+    def test_save_partial_dump_does_nothing(self):
+        # Setup: similiar to test_save.
+        rb = ring.RingBuilder(8, 3, 1)
+        devs = [{'id': 0, 'region': 0, 'zone': 0, 'weight': 1,
+                 'ip': '127.0.0.0', 'port': 10000, 'device': 'sda1',
+                 'meta': 'meta0'},
+                {'id': 1, 'region': 0, 'zone': 1, 'weight': 1,
+                 'ip': '127.0.0.1', 'port': 10001, 'device': 'sdb1',
+                 'meta': 'meta1'},
+                {'id': 2, 'region': 0, 'zone': 2, 'weight': 2,
+                 'ip': '127.0.0.2', 'port': 10002, 'device': 'sdc1',
+                 'meta': 'meta2'},
+                {'id': 3, 'region': 0, 'zone': 3, 'weight': 2,
+                 'ip': '127.0.0.3', 'port': 10003, 'device': 'sdd1'}]
+        for d in devs:
+            rb.add_dev(d)
+        rb.rebalance()
+
+        builder_file = os.path.join(self.testdir, 'test_save.builder')
+
+        # Save builder before any change for assertEqual comparison.
+        rb.save(builder_file)
+        with open(builder_file, 'rb') as f:
+            good_bytes = f.read()
+
+        def half_dump(obj, file, protocol=None, **kwargs):
+            # Simulate a crash part-way through writing the pickle stream:
+            payload = pickle.dumps(obj, protocol=protocol or 2)
+            file.write(payload[:len(payload) // 2]) # write only half the bytes
+            file.flush()
+            raise OSError('simulated failure during dump')
+
+        with mock.patch('swift.common.ring.builder.pickle.dump', half_dump):
+            self.assertRaises(OSError, rb.save, builder_file)
+
+        # Varification: the builder file should be unchanged after the failed save, 
+        # and still loadable with identical contents.
+        with open(builder_file, 'rb') as f:
+            self.assertEqual(good_bytes, f.read())
+
+        loaded_rb = ring.RingBuilder.load(builder_file)
+        self.assertEqual(rb.to_dict(), loaded_rb.to_dict())
+
     def test_id(self):
         rb = ring.RingBuilder(8, 3, 1)
         # check id is assigned after save
