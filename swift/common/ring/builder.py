@@ -1830,7 +1830,7 @@ class RingBuilder(object):
             id_persisted = False
             self._id = uuid.uuid4().hex
         try:
-            with open(builder_file, 'wb') as f:
+            with open(builder_file, 'wb') as f: # wb: writing in binary mode
                 pickle.dump(self.to_dict(), f, protocol=2)
         except Exception:
             if not id_persisted:
