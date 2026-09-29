@@ -18,9 +18,17 @@
 #     cd EC528_swift
 #     bash experiments/setup.sh
 #
-#     # then:
+#     # then, in each new shell:
 #     source .venv/bin/activate
-#     python experiments/exp1_run_partial_dump_test.py --swift-src "$PWD"
+#
+# SCOPE
+# -----
+# This script prepares the machine and STOPS. It does not run the experiments,
+# and it does not run any part of Swift's test suite -- the commands for those
+# are in the design document's "Running the experiments" section, together with
+# the expected runtime and the output that counts as a match. Keeping the two
+# separate means a slow, system-modifying provisioning step is never confused
+# with a bounded, repeatable measurement.
 #
 # Options:
 #     --skip-xfs      do not create the XFS scratch filesystem (see WARNING below)
@@ -551,28 +559,38 @@ if [ -n "$SWIFT_PATH" ] && [ -f "$SWIFT_PATH" ]; then
     esac
 fi
 
-# 6c. what the two experiments will now report
-say ""
-say "  the experiments should now behave as follows:"
-
+# 6c. environment summary. This script NEVER runs the experiments -- it only
+#     prepares the machine. Running them is the reader's next step, documented in
+#     the design document, and deliberately kept separate so that provisioning
+#     (slow, system-modifying) and measuring (bounded, repeatable) cannot be
+#     confused with one another.
 REV="$( cd "$REPO_ROOT" && git describe --tags --always --dirty 2>/dev/null || echo "unknown" )"
-say "    revision     ${REV}"
-say "    exp1         expect exit 1 -- the atomicity bug is present, so the test FAILS"
-say "                 (exit 0 would mean the fix has landed)"
-say "    exp0         expect exit 0 -- green baseline, run with --results-json to record it"
+say ""
+say "  revision      ${REV:-unknown}"
 
 if [ "${XATTR_OK:-true}" != true ]; then
     say ""
-    warn "the xattr probe failed, so exp0 will report many SKIPPED tests"
-    warn "that is not a green baseline -- fix section 3 first"
+    warn "the xattr probe failed, so the unit suite will report many SKIPPED tests"
+    warn "and a 'green' run would not mean much -- fix the xattr issue above first"
 fi
 
-banner "next steps"
-say "  source ${VENV_DIR#"${REPO_ROOT}/"}/bin/activate"
-say "  python experiments/exp1_run_partial_dump_test.py --swift-src \"\$PWD\"   # expect exit 1"
-say "  python experiments/exp0_unittests.py --swift-src \"\$PWD\" --results-json baseline.json --timeout 3600"
+banner "environment ready"
+say "  Nothing has been run. This script only prepares the machine."
 say ""
-say "  Run exp0 in tmux: it takes 20-40 minutes, and an SSH drop would kill it."
+say "  Activate the virtualenv in each new shell:"
+say "    source ${VENV_DIR#"${REPO_ROOT}/"}/bin/activate"
+say ""
+say "  The experiments are documented in the design document's"
+say "  'Running the experiments' section, which states the command, the"
+say "  expected runtime, and what output counts as a match. In brief:"
+say ""
+say "    python experiments/exp1_run_partial_dump_test.py      # one test, seconds"
+say "    python experiments/exp0_unittests.py --results-json baseline.json --timeout 3600"
+say ""
+say "  Both take --swift-src if the tree holding test/unit is not this repo;"
+say "  it is discovered automatically in the usual layout."
+say "  Run exp0 inside tmux: it takes 20-40 minutes."
+say "  Their exit codes are 0 pass / 1 ran-and-failed / 77 could-not-run."
 
 if [ "$FAILED" = true ]; then
     finish "$EXIT_FAIL" "FAIL (one or more checks above are not satisfied)"
