@@ -2118,6 +2118,9 @@ class TestRingBuilder(unittest.TestCase):
         with open(builder_file, 'rb') as f:
             good_bytes = f.read()
 
+        # Compare loaded states so load-time metadata normalization is included.
+        expected = ring.RingBuilder.load(builder_file).to_dict()
+
         def half_dump(obj, file, protocol=None, **kwargs):
             # Simulate a crash part-way through writing the pickle stream:
             payload = pickle.dumps(obj, protocol=protocol or 2)
@@ -2134,7 +2137,7 @@ class TestRingBuilder(unittest.TestCase):
             self.assertEqual(good_bytes, f.read())
 
         loaded_rb = ring.RingBuilder.load(builder_file)
-        self.assertEqual(rb.to_dict(), loaded_rb.to_dict())
+        self.assertEqual(expected, loaded_rb.to_dict())
 
     def test_id(self):
         rb = ring.RingBuilder(8, 3, 1)
