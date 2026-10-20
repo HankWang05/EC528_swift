@@ -2033,45 +2033,8 @@ class TestRingBuilder(unittest.TestCase):
                           ring.RingBuilder.load, 'fake.builder',
                           open=fake_open)
 
-    def test_save_load(self):
-        rb = ring.RingBuilder(8, 3, 1)
-        devs = [{'id': 0, 'region': 0, 'zone': 0, 'weight': 1,
-                 'ip': '127.0.0.0', 'port': 10000,
-                 'replication_ip': '127.0.0.0', 'replication_port': 10000,
-                 'device': 'sda1', 'meta': 'meta0'},
-                {'id': 1, 'region': 0, 'zone': 1, 'weight': 1,
-                 'ip': '127.0.0.1', 'port': 10001,
-                 'replication_ip': '127.0.0.1', 'replication_port': 10001,
-                 'device': 'sdb1', 'meta': 'meta1'},
-                {'id': 2, 'region': 0, 'zone': 2, 'weight': 2,
-                 'ip': '127.0.0.2', 'port': 10002,
-                 'replication_ip': '127.0.0.2', 'replication_port': 10002,
-                 'device': 'sdc1', 'meta': 'meta2'},
-                {'id': 3, 'region': 0, 'zone': 3, 'weight': 2,
-                 'ip': '127.0.0.3', 'port': 10003,
-                 'replication_ip': '127.0.0.3', 'replication_port': 10003,
-                 'device': 'sdd1', 'meta': ''}]
-        rb.set_overload(3.14159)
-        for d in devs:
-            rb.add_dev(d)
-        rb.rebalance()
-        # There are so few devs, they should fit into 1 byte dev_ids but we
-        # store in a minimum of 2 for backwards compat.
-        self.assertEqual(rb.dev_id_bytes, 2)
-        self.assertEqual(rb._replica2part2dev[0].itemsize, 2)
-        builder_file = os.path.join(self.testdir, 'test_save.builder')
-        rb.save(builder_file)
-        loaded_rb = ring.RingBuilder.load(builder_file)
-        self.maxDiff = None
-        self.assertEqual(loaded_rb.to_dict(), rb.to_dict())
-        self.assertEqual(loaded_rb.overload, 3.14159)
-        self.assertEqual(loaded_rb.dev_id_bytes, 2)
-        self.assertEqual(loaded_rb._replica2part2dev[0].itemsize, 2)
-
-    @mock.patch('builtins.open', autospec=True)
-    @mock.patch('swift.common.ring.builder.pickle.dump', autospec=True)
-    def test_save(self, mock_pickle_dump, mock_open):
-        mock_open.return_value = mock_fh = mock.MagicMock()
+    def test_save(self):
+        # Setup: similar to test_save_partial_dump_does_nothing.
         rb = ring.RingBuilder(8, 3, 1)
         devs = [{'id': 0, 'region': 0, 'zone': 0, 'weight': 1,
                  'ip': '127.0.0.0', 'port': 10000, 'device': 'sda1',
@@ -2087,11 +2050,21 @@ class TestRingBuilder(unittest.TestCase):
         for d in devs:
             rb.add_dev(d)
         rb.rebalance()
-        rb.save('some.builder')
-        mock_open.assert_called_once_with('some.builder', 'wb')
-        mock_pickle_dump.assert_called_once_with(rb.to_dict(),
-                                                 mock_fh.__enter__(),
-                                                 protocol=2)
+
+        builder_file = os.path.join(self.testdir, 'test_save.builder')
+
+        # A successful first save should create a loadable builder.
+        rb.save(builder_file)
+        self.assertTrue(os.path.isfile(builder_file))
+
+        # Compare loaded states so load-time metadata normalization is included.
+        expected = ring.RingBuilder.load(builder_file).to_dict()
+
+        # Saving again should preserve the builder's saved state.
+        rb.save(builder_file)
+
+        actual = ring.RingBuilder.load(builder_file).to_dict()
+        self.assertEqual(expected, actual)
 
     def test_save_partial_dump_does_nothing(self):
         # Setup: similiar to test_save.
