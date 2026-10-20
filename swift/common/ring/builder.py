@@ -1848,8 +1848,6 @@ class RingBuilder(object):
                 self._id = None
             raise
 
-
-
     def search_devs(self, search_values):
         """Search devices by parameters.
 
