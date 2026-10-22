@@ -19,6 +19,7 @@ import errno
 import itertools
 import logging
 import math
+import os
 import random
 import uuid
 
@@ -35,6 +36,7 @@ from swift.common.ring.ring import RingData
 from swift.common.ring.utils import tiers_for_dev, build_tier_tree, \
     validate_and_normalize_address, validate_replicas_by_tier, pretty_dev, \
     none_dev_id, calc_dev_id_bytes, BYTES_TO_TYPE_CODE, resize_array
+from swift.common.utils import renamer
 
 # we can't store None's in the replica2part2dev array, so we high-jack
 # the max value for magic to represent the part is not currently
@@ -1829,13 +1831,22 @@ class RingBuilder(object):
         if self._id is None:
             id_persisted = False
             self._id = uuid.uuid4().hex
+        temp_builder_filename = builder_file + (".new.%d" % os.getpid())
+
         try:
-            with open(builder_file, 'wb') as f: # wb: writing in binary mode
-                pickle.dump(self.to_dict(), f, protocol=2)
+            with open(temp_builder_filename, 'wb') as fh:
+                pickle.dump(self.to_dict(), fh, protocol = 2)
+                fh.flush()
+                os.fsync(fh.fileno())
         except Exception:
+            try:
+                os.unlink(temp_builder_filename)
+            except OSError:
+                pass
             if not id_persisted:
                 self._id = None
             raise
+        renamer(temp_builder_filename, builder_file, fsync=True)
 
     def search_devs(self, search_values):
         """Search devices by parameters.
