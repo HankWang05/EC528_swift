@@ -2088,15 +2088,23 @@ class TestRingBuilder(unittest.TestCase):
 
         builder_file = os.path.join(self.testdir, 'test_save.builder')
 
+        temp_builder_file = builder_file + ".new.%d" % os.getpid() # TODO: Change this line after we improve builder.save()
+
         # A successful first save should create a loadable builder.
         rb.save(builder_file)
         self.assertTrue(os.path.isfile(builder_file))
+
+        # Varify that save() does not leave temp files over.
+        self.assertFalse(os.path.exists(temp_builder_file))
 
         # Compare loaded states so load-time metadata normalization is included.
         expected = ring.RingBuilder.load(builder_file).to_dict()
 
         # Saving again should preserve the builder's saved state.
         rb.save(builder_file)
+
+        # Varify that save() does not leave temp files over.
+        self.assertFalse(os.path.exists(temp_builder_file))
 
         actual = ring.RingBuilder.load(builder_file).to_dict()
         self.assertEqual(expected, actual)
@@ -2136,13 +2144,16 @@ class TestRingBuilder(unittest.TestCase):
             file.flush()
             raise OSError('simulated failure during dump')
 
+        temp_builder_file = builder_file + ".new.%d" % os.getpid() # TODO: Change this line after we improve builder.save()
+
         with mock.patch('swift.common.ring.builder.pickle.dump', half_dump):
             self.assertRaises(OSError, rb.save, builder_file)
 
         # Varification: the builder file should be unchanged after the failed save, 
-        # and still loadable with identical contents.
+        # no temporary file should be left behind.
         with open(builder_file, 'rb') as f:
             self.assertEqual(good_bytes, f.read())
+        self.assertFalse(os.path.exists(temp_builder_file))
 
         loaded_rb = ring.RingBuilder.load(builder_file)
         self.assertEqual(expected, loaded_rb.to_dict())

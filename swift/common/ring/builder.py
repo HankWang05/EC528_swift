@@ -1835,10 +1835,9 @@ class RingBuilder(object):
 
         try:
             with open(temp_builder_filename, 'wb') as fh:
-                pickle.dump(self.to_dict(), fh, 2)
+                pickle.dump(self.to_dict(), fh, protocol = 2)
                 fh.flush()
                 os.fsync(fh.fileno())
-            renamer(temp_builder_filename, builder_file, fsync=True)
         except Exception:
             try:
                 os.unlink(temp_builder_filename)
@@ -1847,6 +1846,7 @@ class RingBuilder(object):
             if not id_persisted:
                 self._id = None
             raise
+        renamer(temp_builder_filename, builder_file, fsync=True)
 
     def search_devs(self, search_values):
         """Search devices by parameters.
