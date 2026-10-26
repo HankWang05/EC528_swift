@@ -26,6 +26,7 @@ import uuid
 import pickle  # nosec: B403
 from copy import deepcopy
 from contextlib import contextmanager
+from tempfile import NamedTemporaryFile
 
 from array import array
 from collections import defaultdict
@@ -1831,18 +1832,25 @@ class RingBuilder(object):
         if self._id is None:
             id_persisted = False
             self._id = uuid.uuid4().hex
-        temp_builder_filename = builder_file + (".new.%d" % os.getpid())
+        temp_builder_filename = None
 
         try:
-            with open(temp_builder_filename, 'wb') as fh:
-                pickle.dump(self.to_dict(), fh, protocol = 2)
+            with NamedTemporaryFile(
+            mode='wb',
+            dir=os.path.dirname(builder_file) or '.',
+            prefix=os.path.basename(builder_file),
+            delete=False) as fh:
+                temp_builder_filename = fh.name
+                pickle.dump(self.to_dict(), fh, protocol=2)
                 fh.flush()
                 os.fsync(fh.fileno())
+
         except Exception:
-            try:
-                os.unlink(temp_builder_filename)
-            except OSError:
-                pass
+            if temp_builder_filename is not None:
+                try:
+                    os.unlink(temp_builder_filename)
+                except OSError:
+                    pass
             if not id_persisted:
                 self._id = None
             raise
