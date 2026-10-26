@@ -49,27 +49,6 @@ from test.unit import write_fake_ring, DEFAULT_TEST_EC_TYPE, connect_tcp, \
 
 
 def setup_servers(the_object_server=object_server, extra_conf=None):
-    """Start the test servers, restoring globals if startup fails.
-
-    ``_setup_servers()`` overwrites two module globals -- ``utils.logs.
-    SysLogHandler`` and ``storage_policy._POLICIES`` -- and only
-    ``teardown_servers()`` puts them back. A caller whose class-level setup
-    raises never reaches its teardown, which leaves a mocked SysLogHandler in
-    place for the rest of the test process and breaks unrelated syslog tests
-    (test_proxy_logging, test_logs). Snapshot and restore here so the globals
-    are exception-safe.
-    """
-    orig_SysLogHandler = utils.logs.SysLogHandler
-    orig_POLICIES = storage_policy._POLICIES
-    try:
-        return _setup_servers(the_object_server, extra_conf)
-    except Exception:
-        utils.logs.SysLogHandler = orig_SysLogHandler
-        storage_policy._POLICIES = orig_POLICIES
-        raise
-
-
-def _setup_servers(the_object_server=object_server, extra_conf=None):
     """
     Setup proxy, account, container and object servers using a set of fake
     rings and policies.
