@@ -1836,10 +1836,10 @@ class RingBuilder(object):
 
         try:
             with NamedTemporaryFile(
-            mode='wb',
-            dir=os.path.dirname(builder_file) or '.',
-            prefix=os.path.basename(builder_file),
-            delete=False) as fh:
+                    mode='wb',
+                    dir=os.path.dirname(builder_file) or '.',
+                    prefix=os.path.basename(builder_file),
+                    delete=False) as fh:
                 temp_builder_filename = fh.name
                 pickle.dump(self.to_dict(), fh, protocol=2)
                 fh.flush()
