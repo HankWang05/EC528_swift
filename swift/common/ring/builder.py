@@ -19,12 +19,14 @@ import errno
 import itertools
 import logging
 import math
+import os
 import random
 import uuid
 
 import pickle  # nosec: B403
 from copy import deepcopy
 from contextlib import contextmanager
+from tempfile import NamedTemporaryFile
 
 from array import array
 from collections import defaultdict
@@ -35,6 +37,7 @@ from swift.common.ring.ring import RingData
 from swift.common.ring.utils import tiers_for_dev, build_tier_tree, \
     validate_and_normalize_address, validate_replicas_by_tier, pretty_dev, \
     none_dev_id, calc_dev_id_bytes, BYTES_TO_TYPE_CODE, resize_array
+from swift.common.utils import renamer
 
 # we can't store None's in the replica2part2dev array, so we high-jack
 # the max value for magic to represent the part is not currently
@@ -1829,13 +1832,29 @@ class RingBuilder(object):
         if self._id is None:
             id_persisted = False
             self._id = uuid.uuid4().hex
+        temp_builder_filename = None
+
         try:
-            with open(builder_file, 'wb') as f: # wb: writing in binary mode
-                pickle.dump(self.to_dict(), f, protocol=2)
+            with NamedTemporaryFile(
+                    mode='wb',
+                    dir=os.path.dirname(builder_file) or '.',
+                    prefix=os.path.basename(builder_file),
+                    delete=False) as fh:
+                temp_builder_filename = fh.name
+                pickle.dump(self.to_dict(), fh, protocol=2)
+                fh.flush()
+                os.fsync(fh.fileno())
+
         except Exception:
+            if temp_builder_filename is not None:
+                try:
+                    os.unlink(temp_builder_filename)
+                except OSError:
+                    pass
             if not id_persisted:
                 self._id = None
             raise
+        renamer(temp_builder_filename, builder_file, fsync=True)
 
     def search_devs(self, search_values):
         """Search devices by parameters.
