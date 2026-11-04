@@ -2094,7 +2094,7 @@ class TestRingBuilder(unittest.TestCase):
         rb.save(builder_file)
         self.assertTrue(os.path.isfile(builder_file))
 
-        # Varify that save() does not leave temp files over.
+        # Verify that save() does not leave temp files over.
         self.assertFalse(os.path.exists(temp_builder_file))
 
         # Compare loaded states so load-time metadata normalization is included.
@@ -2103,7 +2103,7 @@ class TestRingBuilder(unittest.TestCase):
         # Saving again should preserve the builder's saved state.
         rb.save(builder_file)
 
-        # Varify that save() does not leave temp files over.
+        # Verify that save() does not leave temp files over.
         self.assertFalse(os.path.exists(temp_builder_file))
 
         actual = ring.RingBuilder.load(builder_file).to_dict()
