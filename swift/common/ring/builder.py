@@ -1844,7 +1844,7 @@ class RingBuilder(object):
                 pickle.dump(self.to_dict(), fh, protocol=2)
                 fh.flush()
                 os.fsync(fh.fileno())
-
+            renamer(temp_builder_filename, builder_file, fsync=True)
         except Exception:
             if temp_builder_filename is not None:
                 try:
@@ -1854,7 +1854,6 @@ class RingBuilder(object):
             if not id_persisted:
                 self._id = None
             raise
-        renamer(temp_builder_filename, builder_file, fsync=True)
 
     def search_devs(self, search_values):
         """Search devices by parameters.
