@@ -94,6 +94,7 @@ import json
 import os
 
 from random import shuffle
+from tempfile import NamedTemporaryFile
 
 from swift.common.exceptions import RingBuilderError
 from swift.common.ring import RingBuilder
@@ -501,8 +502,14 @@ class CompositeRingBuilder(object):
         if not self.components or not self._builder_files:
             raise ValueError("No composed ring to save.")
         # persist relative paths to builder files
-        with open(path_to_file, 'wt') as fp:
-            metadata = self.to_dict()
+        tempfile_name = None
+        try:
+            with NamedTemporaryFile(mode='wt',
+                dir=os.path.dirname(path_to_file),
+                prefix=os.path.basename(path_to_file),
+                delete=False) as fp:
+                temp_filename = fp.name
+                metadata = self.to_dict()
             # future-proofing:
             # - saving abs path to component builder files and this file should
             # allow the relative paths to be derived if required when loading
@@ -510,9 +517,19 @@ class CompositeRingBuilder(object):
             # has been moved, so long as their relative locations are
             # unchanged.
             # - save a serialization format version number
-            metadata['saved_path'] = os.path.abspath(path_to_file)
-            metadata['serialization_version'] = 1
-            json.dump(metadata, fp)
+                metadata['saved_path'] = os.path.abspath(path_to_file)
+                metadata['serialization_version'] = 1
+                json.dump(metadata, fp)
+                fp.flush()
+                os.fsync(fp.fileno())
+            renamer(tempfile_name, path_to_file, fsync=True)
+        except Exception:
+            if tempfile_name is not None:
+                try:
+                    os.unlink(tempfile_name)
+                except OSError:
+                    pass
+			raise
 
     def _load_components(self, builder_files=None, force=False,
                          require_modified=False):
