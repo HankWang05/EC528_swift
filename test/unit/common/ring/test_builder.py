@@ -2068,10 +2068,8 @@ class TestRingBuilder(unittest.TestCase):
         self.assertEqual(loaded_rb.dev_id_bytes, 2)
         self.assertEqual(loaded_rb._replica2part2dev[0].itemsize, 2)
 
-    @mock.patch('builtins.open', autospec=True)
-    @mock.patch('swift.common.ring.builder.pickle.dump', autospec=True)
-    def test_save(self, mock_pickle_dump, mock_open):
-        mock_open.return_value = mock_fh = mock.MagicMock()
+    def test_save(self):
+        # Setup: similar to test_save_partial_dump_does_nothing.
         rb = ring.RingBuilder(8, 3, 1)
         devs = [{'id': 0, 'region': 0, 'zone': 0, 'weight': 1,
                  'ip': '127.0.0.0', 'port': 10000, 'device': 'sda1',
@@ -2087,11 +2085,81 @@ class TestRingBuilder(unittest.TestCase):
         for d in devs:
             rb.add_dev(d)
         rb.rebalance()
-        rb.save('some.builder')
-        mock_open.assert_called_once_with('some.builder', 'wb')
-        mock_pickle_dump.assert_called_once_with(rb.to_dict(),
-                                                 mock_fh.__enter__(),
-                                                 protocol=2)
+
+        builder_file = os.path.join(self.testdir, 'test_save.builder')
+
+        # A successful first save should create a loadable builder.
+        before = set(os.listdir(self.testdir))
+        rb.save(builder_file)
+        self.assertTrue(os.path.isfile(builder_file))
+
+        # Verify that save() does not leave temp files over.
+        after = set(os.listdir(self.testdir))
+        self.assertEqual(before | {os.path.basename(builder_file)}, after)
+
+        # Test if load-time metadata normalization is included.
+        expected = ring.RingBuilder.load(builder_file).to_dict()
+
+        # Saving again should preserve the builder's saved state.
+        before = set(os.listdir(self.testdir))
+        rb.save(builder_file)
+
+        # Verify that save() does not leave temp files over.
+        after = set(os.listdir(self.testdir))
+        self.assertEqual(before | {os.path.basename(builder_file)}, after)
+
+        actual = ring.RingBuilder.load(builder_file).to_dict()
+        self.assertEqual(expected, actual)
+
+    def test_save_partial_dump_does_nothing(self):
+        # Setup: similar to test_save.
+        rb = ring.RingBuilder(8, 3, 1)
+        devs = [{'id': 0, 'region': 0, 'zone': 0, 'weight': 1,
+                 'ip': '127.0.0.0', 'port': 10000, 'device': 'sda1',
+                 'meta': 'meta0'},
+                {'id': 1, 'region': 0, 'zone': 1, 'weight': 1,
+                 'ip': '127.0.0.1', 'port': 10001, 'device': 'sdb1',
+                 'meta': 'meta1'},
+                {'id': 2, 'region': 0, 'zone': 2, 'weight': 2,
+                 'ip': '127.0.0.2', 'port': 10002, 'device': 'sdc1',
+                 'meta': 'meta2'},
+                {'id': 3, 'region': 0, 'zone': 3, 'weight': 2,
+                 'ip': '127.0.0.3', 'port': 10003, 'device': 'sdd1'}]
+        for d in devs:
+            rb.add_dev(d)
+        rb.rebalance()
+
+        builder_file = os.path.join(self.testdir, 'test_save.builder')
+
+        # Save builder before any change for assertEqual comparison.
+        rb.save(builder_file)
+        with open(builder_file, 'rb') as f:
+            good_bytes = f.read()
+
+        # Compare loaded states to include load-time metadata normalization.
+        expected = ring.RingBuilder.load(builder_file).to_dict()
+
+        def half_dump(obj, file, protocol=None, **kwargs):
+            # Simulate a crash part-way through writing the pickle stream:
+            payload = pickle.dumps(obj, protocol=protocol or 2)
+            # write only half the bytes
+            file.write(payload[:len(payload) // 2])
+            file.flush()
+            raise OSError('simulated failure during dump')
+
+        before = set(os.listdir(self.testdir))
+        with mock.patch('swift.common.ring.builder.pickle.dump', half_dump):
+            self.assertRaises(OSError, rb.save, builder_file)
+
+        # Verification: the builder file should be unchanged and no
+        # temp file should be left behind.
+        with open(builder_file, 'rb') as f:
+            self.assertEqual(good_bytes, f.read())
+        after = set(os.listdir(self.testdir))
+        self.assertEqual(before, after)
+
+        loaded_rb = ring.RingBuilder.load(builder_file)
+        self.assertEqual(expected, loaded_rb.to_dict())
 
     def test_id(self):
         rb = ring.RingBuilder(8, 3, 1)
