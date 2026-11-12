@@ -95,6 +95,7 @@ import os
 
 from random import shuffle
 from tempfile import NamedTemporaryFile
+from swift.common.utils import renamer
 
 from swift.common.exceptions import RingBuilderError
 from swift.common.ring import RingBuilder
@@ -503,22 +504,22 @@ class CompositeRingBuilder(object):
             raise ValueError("No composed ring to save.")
         # persist relative paths to builder files
         tempfile_name = None
+        metadata = self.to_dict()
+        # future-proofing:
+        # - saving abs path to component builder files and this file should
+        # allow the relative paths to be derived if required when loading
+        # a set of {composite builder file, component builder files} that
+        # has been moved, so long as their relative locations are
+        # unchanged.
+        # - save a serialization format version number
+        metadata['saved_path'] = os.path.abspath(path_to_file)
+        metadata['serialization_version'] = 1
         try:
             with NamedTemporaryFile(mode='wt',
-                dir=os.path.dirname(path_to_file),
+                dir=os.path.dirname(path_to_file) or '.',
                 prefix=os.path.basename(path_to_file),
                 delete=False) as fp:
-                temp_filename = fp.name
-                metadata = self.to_dict()
-            # future-proofing:
-            # - saving abs path to component builder files and this file should
-            # allow the relative paths to be derived if required when loading
-            # a set of {composite builder file, component builder files} that
-            # has been moved, so long as their relative locations are
-            # unchanged.
-            # - save a serialization format version number
-                metadata['saved_path'] = os.path.abspath(path_to_file)
-                metadata['serialization_version'] = 1
+                tempfile_name = fp.name
                 json.dump(metadata, fp)
                 fp.flush()
                 os.fsync(fp.fileno())
@@ -529,7 +530,7 @@ class CompositeRingBuilder(object):
                     os.unlink(tempfile_name)
                 except OSError:
                     pass
-			raise
+            raise
 
     def _load_components(self, builder_files=None, force=False,
                          require_modified=False):
