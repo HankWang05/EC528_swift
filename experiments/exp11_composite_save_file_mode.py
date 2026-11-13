@@ -3,14 +3,17 @@
 
 Claim
 -----
-Replacing the composite file must not change who can read it. Upstream
-truncated and rewrote the existing file, so an update kept the file's mode and
-a first save got the ordinary umask-derived mode. A temporary-file save
-installs a different inode; tempfile.NamedTemporaryFile creates files with
-mode 0600, so unless the fix restores the mode, an update narrows a 0644
-composite file to owner-only. This checks a side effect of the fix: upstream is
-expected to pass, and a patched tree fails it until the mode is preserved.
-Ownership changes and ACLs are out of scope.
+Replacing the composite file must not make its permission bits more
+permissive. An update may retain or remove existing permissions, but must not
+add permissions that the original file did not grant. A first save must not
+grant permissions beyond those of an ordinary file created in the same
+directory under the current umask. For example, changing 0644 to 0600 is
+acceptable, while changing 0644 to 0664 is not.
+
+This checks a side effect of the atomic-save fix: both upstream and the patched
+tree are expected to pass, even if the patched tree produces more restrictive
+permissions. The checks cover the final composite file, not temporary-file
+access during saving. Ownership changes and ACLs are out of scope.
 
 Usage (from EC528_swift)
 -----------------------
@@ -58,16 +61,27 @@ def mode_of(path):
 
 
 class TestCompositeSaveFileMode(CompositeCase):
-    def test_update_keeps_existing_file_mode(self):
-        os.chmod(str(self.path), 0o644)
-        self.composite.version += 1
-        self.composite.save(str(self.path))
-        print('  mode after update  %04o (was 0644)' % mode_of(self.path),
-              flush=True)
-        self.assertEqual(0o644, mode_of(self.path),
-                         'saving changed the composite file permissions')
+    def assert_update_does_not_add_permissions(self, before, after):
+        added = after & ~before
+        self.assertEqual(
+            0, added,
+            'saving made file permissions more generous: '
+            '%04o -> %04o (added %04o)' % (before, after, added))
 
-    def test_first_save_uses_umask_mode(self):
+    def test_update_keeps_existing_file_mode(self):
+        for before in (0o600, 0o640, 0o644, 0o660, 0o664):
+            with self.subTest(initial_mode='%04o' % before):
+                os.chmod(str(self.path), before)
+                self.composite.version += 1
+                self.composite.save(str(self.path))
+                after = mode_of(self.path)
+                print(
+                    '  mode after update %04o (was %04o)' % (
+                        after, before),
+                    flush=True)
+                self.assert_update_does_not_add_permissions(before, after)
+
+    def test_first_save_does_not_exceed_umask_mode(self):
         directory = self.path.parent / 'first-save'
         directory.mkdir()
         probe = directory / 'probe.json'
@@ -76,11 +90,12 @@ class TestCompositeSaveFileMode(CompositeCase):
         expected = mode_of(probe)
         path = directory / 'first-save.json'
         make_composite(self.module, directory).save(str(path))
-        print('  mode after first save %04o (plain create gives %04o)' % (
-            mode_of(path), expected), flush=True)
-        self.assertEqual(expected, mode_of(path),
-                         'a first save did not get the ordinary file mode')
-
+        actual = mode_of(path)
+        print(
+            '  mode after first save %04o (plain create gives %04o)' % (
+                actual, expected),
+            flush=True)
+        self.assert_update_does_not_add_permissions(expected, actual)
 
 if __name__ == '__main__':
     raise SystemExit(run('Composite-builder saves keep the composite file '
